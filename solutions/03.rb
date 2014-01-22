@@ -108,7 +108,7 @@ module Graphics
       [from.hash, to.hash].hash
     end
 
-    def draw_pixels(canvas) #FIXME
+    def draw_pixels(canvas)
       bresenham_pixels.each { |x, y| canvas.set_pixel(x, y) }
     end
 
@@ -172,7 +172,7 @@ module Graphics
       [top_left, bottom_right].hash
     end
 
-    def draw_pixels(canvas) #FIXME
+    def draw_pixels(canvas)
       canvas.draw Line.new(top_left, top_right)
       canvas.draw Line.new(top_left, bottom_left)
       canvas.draw Line.new(bottom_left, bottom_right)

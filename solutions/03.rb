@@ -1,50 +1,29 @@
 module Graphics
   require 'set'
+
   class Canvas
-    def initialize(width = 1, height = 1)
+    attr_reader :width, :height, :pixels
+
+    def initialize(width, height)
+      @width  = width
       @height = height
-      @width = width
-      @canvas = initialize_canvas @width, @height
-    end
-
-    def initialize_canvas(width, height)
-      canvas = {}
-      0.upto(height - 1) do |i|
-        canvas[i] = Array.new(width, 0)
-      end
-      canvas
-    end
-
-    def width
-      @width
-    end
-
-    def height
-      @height
-    end
-
-    def get_canvas
-      @canvas
+      @pixels = Array.new(height) { Array.new(width, 0) }
     end
 
     def set_pixel(x, y)
-      @canvas[y][x] = 1
+      @pixels[y][x] = 1 if (x < width and y < height)
     end
 
     def pixel_at?(x, y)
-      @canvas[y][x] == 1
+      @pixels[y][x] == 1
     end
 
-    def draw(figure)
-      if figure.is_a? Point
-        set_pixel(figure.x, figure.y)
-      else
-        (figure.pixels_to_draw).each { |point| set_pixel(point[0], point[1]) }
-      end
+    def draw(shape)
+      shape.draw_pixels(self)
     end
 
     def render_as(renderer)
-      renderer.render @canvas, @width, @height
+      renderer.render @pixels, @width, @height
     end
   end
 
@@ -61,127 +40,153 @@ module Graphics
     end
 
     class Html
-      def self.render canvas, width, height
-        rendered = ' <!DOCTYPE html><html><head><title>Rendered Canvas</title><style type=
+
+      HEADER = '<!DOCTYPE html><html><head><title>Rendered Canvas</title><style type=
                      "text/css">.canvas {font-size: 1px;line-height: 1px;}.canvas *
                      {display: inline-block;width: 10px; height: 10px; border-radius:
                      5px;}.canvas i {background-color: #eee;}.canvas b {background-color:
-                      #333;} </style> </head> <body><div class="canvas">'
+                      #333;} </style> </head> <body><div class="canvas">'.freeze
+      FOOTER = '</div></body></html>'.freeze
+
+      EMPTY = '<i></i>'.freeze
+      FILLED = '<b></b>'.freeze
+      NEW_LINE = '<br>'.freeze
+
+      def self.render canvas, width, height
+        rendered = []
         0.upto(height - 1) do |j|
-          rendered << canvas[j].join.to_s
-          rendered << '<br>' if j < height - 1
+          rendered << canvas[j].join.to_s.gsub!(/[01]/, '0' => EMPTY, '1' => FILLED)
         end
-        rendered.gsub!(/[01]/, '0' => '<i></i>', '1' => '<b></b>')
-        rendered << '</div></body></html>'
+        HEADER + rendered.join(NEW_LINE) + FOOTER
       end
     end
   end
 
   class Point
+    attr_reader :x, :y
+
     def initialize(x, y)
       @x = x
       @y = y
     end
 
-    def x
-      @x
-    end
-
-    def y
-      @y
-    end
-
     def ==(other)
-      @x == other.x and @y == other.y
+      x == other.x and y == other.y
     end
 
-    def eql?(other)
-      @x.eql? other.x and @y.eql? other.y
+    alias eql? ==
+
+    def hash
+      [x, y].hash
+    end
+
+    def draw_pixels(canvas)
+      canvas.set_pixel(x, y)
     end
   end
 
   class Line
+    attr_reader :from, :to
+
     def initialize(from, to)
-      @from = from
-      @to = to
-    end
-
-    def from
-      @from.y > @to.y ? @from : @to
-    end
-
-    def to
-      @from.y > @to.y ? @to : @from
+      if from.x > to.x or (from.x == to.x and from.y > to.y)
+        @from = to
+        @to   = from
+      else
+        @from = from
+        @to   = to
+      end
     end
 
     def ==(other)
-      points = Set.new([[from.x, from.y], [to.x, to.y]])
-      points_other = Set.new([[other.from.x, other.from.y],[other.to.x, other.to.y]])
-      points == points_other
+      from == other.from and to == other.to
     end
 
-    def eql?(other)
-      points = Set.new([[from.x, from.y], [to.x, to.y]])
-      points_other = Set.new([[other.from.x, other.from.y],[other.to.x, other.to.y]])
-      points.eql? points_other
+    alias eql? ==
+
+    def hash
+      [from.hash, to.hash].hash
     end
 
-    def pixels_to_draw
-      pixels = []
-      if from.y == to.y
-        (from.x).downto(to.x) { |x| pixels << [x, from.y] }
-      elsif from.x == to.x
-        (from.y).downto(to.y) { |y| pixels << [from.x, y] }
+    def draw_pixels(canvas) #FIXME
+      bresenham_pixels.each { |x, y| canvas.set_pixel(x, y) }
+    end
+
+    private
+
+    def bresenham_pixels
+      delta_x, delta_y = to.x - from.x, to.y - from.y
+      slope = delta_y / delta_x.to_f if delta_x != 0
+      if slope
+        rasterize([delta_x, delta_y].max, slope).map { |x, y| [from.x + x, from.y + y] }
+      else
+        from.y.upto(to.y).map { |y| [from.x, y] }
       end
-      pixels
+    end
+
+    def rasterize(length, slope)
+      if slope > 1
+        0.upto(length).map { |i| [(i/slope).round, i] }
+      else
+        0.upto(length).map { |i| [i, (i*slope).round] }
+      end
     end
   end
 
   class Rectangle
+    attr_reader :left, :right
+
     def initialize(left, right)
-      @left = left
-      @right = right
-    end
-
-    def left
-      @left.x < @right.x ? @left : @right
-    end
-
-    def right
-      @left.x < @right.x ? @right : @left
+      if left.x > right.x or (left.x == right.x and left.y > right.y)
+        @left = right
+        @right = left
+      else
+        @left = left
+        @right = right
+      end
     end
 
     def top_left
-      if left.y < right.y
-        left
-      else
-        top_left = Point.new(left.x, right.y)
-      end
+      Point.new left.x, [left.y, right.y].min
     end
 
     def top_right
-      top_right = Point.new(right.x, left.y)
+      Point.new right.x, [left.y, right.y].min
     end
 
     def bottom_left
-      bottom_left = Point.new(left.x, right.y)
+      Point.new left.x, [left.y, right.y].max
     end
 
     def bottom_right
-      if left.x < right.x
-        right
-      else
-        bottom_right = Point.new(right.x, left.y)
-      end
+      Point.new right.x, [left.y, right.y].max
     end
 
-    def pixels_to_draw
-      pixels = []
-      pixels.concat Line.new(top_left, top_right).pixels_to_draw
-      pixels.concat Line.new(top_left, bottom_left).pixels_to_draw
-      pixels.concat Line.new(bottom_left, bottom_right).pixels_to_draw
-      pixels.concat Line.new(top_right, bottom_right).pixels_to_draw
-      pixels
+    def ==(other)
+      top_left == other.top_left and bottom_right == other.bottom_right
+    end
+
+    alias eql? ==
+
+    def hash
+      [top_left, bottom_right].hash
+    end
+
+    def draw_pixels(canvas) #FIXME
+      canvas.draw Line.new(top_left, top_right)
+      canvas.draw Line.new(top_left, bottom_left)
+      canvas.draw Line.new(bottom_left, bottom_right)
+      canvas.draw Line.new(top_right, bottom_right)
     end
   end
+end
+
+__END__
+module Graphics
+  canv = Canvas.new 7, 4
+  #puts " width: #{canv.width}"
+  #canv.set_pixel(1, 0)
+  #canv.draw(Line.new(Point.new(4, 0), Point.new(5, 3)))
+  canv.draw Rectangle.new(Point.new(3, 1), Point.new(5,3))
+  p canv.pixels
 end

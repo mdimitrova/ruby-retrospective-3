@@ -1,76 +1,40 @@
 class Integer
   def prime?
     return false if self < 2
-
-    upper_limit = Math.sqrt(self)
-    (2..upper_limit).all? { |i| remainder(i).nonzero? }
+    2.upto(pred).all? { |divisor| remainder(divisor).nonzero? }
   end
 
-  def prime_factor?(number)
-    number.prime? and remainder(number).zero?
-  end
-
-  def prime_factors # FIXME
-    factors = []
-    number = self.abs
-    while number > 1
-      (2..number).each do |i|
-       number.prime_factor? i and factors << i and number /= i
-      end
-    end
-    factors.sort
+  def prime_factors
+    return [] if abs == 1
+    divisor = 2.upto(abs).find { |x| x.prime? and abs.remainder(x).zero? }
+    [divisor] + (abs / divisor).prime_factors
   end
 
   def harmonic
-    sum = 0
-    (1..self).each { |n| sum += Rational(1, n) }
-    sum
+    1.upto(self).reduce { |sum, number| sum + Rational(1, number) }.to_r
   end
 
   def digits
-    number = self.abs
-    digits = []
-    while number > 0
-      digits << number % 10
-      number /= 10
-    end
-    digits.reverse
+    abs.to_s.chars.map(&:to_i)
   end
 end
 
 class Array
   def frequencies
-    frequencies = Hash.new(0)
-    (0...length).each do |i|
-      if frequencies.key?(self[i])
-        frequencies[self[i]] += 1
-      else
-        frequencies[self[i]] = 1
-      end
+    each_with_object Hash.new(0) do |value, result|
+      result[value] += 1
     end
-    frequencies
   end
 
   def average
-    return if empty?
-    reduce(:+).fdiv(count)
+    reduce(:+).fdiv(count) unless empty?
   end
 
   def drop_every(n)
-    reduced_array = []
-    each_with_index do |item, i|
-      reduced_array << item if (i + 1).remainder(n).nonzero?
-    end
-    reduced_array
+    each_slice(n).flat_map { |slice| slice.take(n - 1) }
   end
 
   def combine_with(other)
-    combined = []
-    max_length = [length, other.length].max
-    (0...max_length).each do |i|
-      combined << self[i] if i < length
-      combined << other[i] if i < other.length
-    end
-    combined
+    empty? ? other : [first] + other.combine_with(self[1..-1])
   end
 end

@@ -4,12 +4,39 @@ module Asm
   end
 
   module RegisterOperations
-  #TODO
+    def mov(destination_register, source)
+      @operations_queue << -> do
+        @registers[destination_register] = get_register_value(source)
+      end
+    end
+
+    def inc(destination_register, value = 1)
+      @operations_queue << -> do
+        @registers[destination_register] += get_register_value(value)
+      end
+    end
+
+    def dec(destination_register, value = 1)
+      @operations_queue << -> do
+        @registers[destination_register] -= get_register_value(value)
+      end
+    end
+
+    def cmp(register, value)
+      @operations_queue << -> do
+        @last_comparison = (@registers[register] <=> get_register_value(value))
+      end
+    end
+
+    def get_register_value(value)
+      @registers[value] or value
+    end
+  end
 
   class Evaluator
     include RegisterOperations
 
-    JUMPS = {
+    JUMP_OPERATIONS = {
       jmp: -> { true },
       je:  -> { @last_comparison == 0 },
       jne: -> { @last_comparison != 0 },
@@ -19,14 +46,11 @@ module Asm
       jge: -> { @last_comparison >= 0 },
     }.freeze
 
-    JUMPS.each do |name, status|
+    JUMP_OPERATIONS.each do |name, status|
       define_method name do |destination|
         jump_to destination, status
       end
     end
-
-    attr_accessor :registers, :labels
-    attr_accessor :operations_queue, :operation, :last_comparison
 
     def initialize
       @registers = {ax: 0, bx: 0, cx: 0, dx: 0}
@@ -37,7 +61,7 @@ module Asm
     end
 
     def label(label_name)
-      labels[label_name] = operations_queue.size
+      @labels[label_name] = @operations_queue.size
     end
 
     def method_missing(method, *args, &block)
@@ -46,23 +70,34 @@ module Asm
 
     def evaluate(&block)
       instance_eval &block
-      while operation < operations_queue.size
-        instance_exec &operations_queue[operation]
-        operation += 1
+      until @operation == @operations_queue.size
+        instance_exec &@operations_queue[@operation]
+        @operation += 1
       end
-      registers.values
+      @registers.values
     end
 
     private
 
     def jump_to(destination, status)
-      operations_queue >> -> do
-        operation = labels[destination].pred if instance_exec &status
+      @operations_queue << -> do
+        @operation = @labels[destination].pred if instance_exec &status
       end
-    end
-
-    def get_register_value(value)
-      value.is_a? Symbol ? @registers[value] : value
     end
   end
 end
+
+Asm.asm do
+  mov ax, 40
+  mov bx, 32
+  label cycle
+  cmp ax, bx
+  je finish
+  jl asmaller
+  dec ax, bx
+  jmp cycle
+  label asmaller
+  dec bx, ax
+  jmp cycle
+  label finish
+end                 # => [8, 8, 0, 0]

@@ -1,76 +1,68 @@
 module Asm
+  def self.asm(&block)
+    Evaluator.new.evaluate &block
+  end
+
+  module RegisterOperations
+  #TODO
+
   class Evaluator
-    attr_accessor :registers, :operations_queue
-    attr_reader :ax, :bx, :cx, :dx
+    include RegisterOperations
 
-    operations = {
-      mov: :'mov',
-      inc: :'+',
-      dec: :'-',
-      cmp: :'<=>',
-      jmp: :'jmp',
-    }
+    JUMPS = {
+      jmp: -> { true },
+      je:  -> { @last_comparison == 0 },
+      jne: -> { @last_comparison != 0 },
+      jl:  -> { @last_comparison <  0 },
+      jle: -> { @last_comparison <= 0 },
+      jg:  -> { @last_comparison >  0 },
+      jge: -> { @last_comparison >= 0 },
+    }.freeze
 
-    operations.each do |operation, operator|
-      define_method operation do |register, value = 1|
-        @operations_queue << {index: register, value: value, operator: operator}
+    JUMPS.each do |name, status|
+      define_method name do |destination|
+        jump_to destination, status
       end
     end
+
+    attr_accessor :registers, :labels
+    attr_accessor :operations_queue, :operation, :last_comparison
 
     def initialize
       @registers = {ax: 0, bx: 0, cx: 0, dx: 0}
-      @labels = {}
+      @labels = Hash.new { |_, key| key }
       @operations_queue = []
-      @ax = :ax
-      @bx = :bx
-      @cx = :cx
-      @dx = :dx
+      @operation = 0
+      @last_comparison = 0
     end
 
     def label(label_name)
-     @labels[label_name] = operations_queue.size
+      labels[label_name] = operations_queue.size
     end
 
-    def jump(jump_operator, label)
-      #TODO
+    def method_missing(method, *args, &block)
+      method
     end
 
-    def method_missing(method)
-      method.to_s
-    end
-
-    def evaluate(start_index)
-      operations_queue.each do |operation|
-        index = operation[:index]
-        value = operation[:value]
-        operator = operation[:operator]
-        if [:jmp, :je, :jne, :jl, :jle, :jg, :jge].include? operator
-          jump(operator, index)
-          break
-        else
-          update_register(index, value, operator)
-        end
+    def evaluate(&block)
+      instance_eval &block
+      while operation < operations_queue.size
+        instance_exec &operations_queue[operation]
+        operation += 1
       end
-      @registers.values
+      registers.values
     end
 
     private
 
-    def update_register(index, value, operator)
-      value = registers[value] if value.is_a? Symbol
-      if operator == :mov
-        registers[index] = value
-      elsif operator == :<=>
-        operator.to_proc.call(registers[index], value)
-      else
-        registers[index] = operator.to_proc.call(registers[index], value)
+    def jump_to(destination, status)
+      operations_queue >> -> do
+        operation = labels[destination].pred if instance_exec &status
       end
     end
-  end
 
-  def self.asm(&block)
-    e = Evaluator.new
-    e.instance_eval &block
-    e.evaluate(0)
+    def get_register_value(value)
+      value.is_a? Symbol ? @registers[value] : value
+    end
   end
 end
